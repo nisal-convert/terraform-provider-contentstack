@@ -197,11 +197,13 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"contentstack_content_type": resourceContentTypeType{},
-		"contentstack_environment":  resourceEnvironmentType{},
-		"contentstack_global_field": resourceGlobalFieldType{},
-		"contentstack_locale":       resourceLocaleType{},
-		"contentstack_webhook":      resourceWebhookType{},
+		"contentstack_content_type":  resourceContentTypeType{},
+		"contentstack_environment":   resourceEnvironmentType{},
+		"contentstack_global_field":  resourceGlobalFieldType{},
+		"contentstack_locale":        resourceLocaleType{},
+		"contentstack_webhook":       resourceWebhookType{},
+		"contentstack_taxonomy":      resourceTaxonomyType{},
+		"contentstack_taxonomy_term": resourceTaxonomyTermType{},
 	}, nil
 }
 

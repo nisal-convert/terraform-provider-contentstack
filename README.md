@@ -9,6 +9,14 @@ This fork adds content-type `options` and `maintain_revisions`, and `field_rules
 for content types and global fields. It preserves JSON options that the upstream
 SDK does not expose, including boolean URL settings and unknown properties.
 
+It also adds `contentstack_taxonomy` and `contentstack_taxonomy_term` for taxonomy
+metadata and term names/hierarchy in the stack's master locale. Existing objects
+can be imported without recreation. Localization, publishing and sibling order
+are not managed. New or moved terms are inserted first among siblings. Moves of
+non-leaf terms and deletion of referenced or child-bearing terms are refused;
+non-empty taxonomies are never force-deleted. Use `lifecycle.prevent_destroy` for
+shared taxonomies and terms.
+
 The fork is not yet published to the Terraform Registry. Its provider address is
 `nisal-convert/contentstack`; the upstream `labd/contentstack` release does not
 contain these changes.

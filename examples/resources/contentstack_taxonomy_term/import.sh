@@ -1,0 +1,1 @@
+terraform import contentstack_taxonomy_term.child topics/child
