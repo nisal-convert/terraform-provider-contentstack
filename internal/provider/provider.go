@@ -36,6 +36,7 @@ func New(version string) func() tfsdk.Provider {
 
 type provider struct {
 	stack   *management.StackInstance
+	models  *modelClient
 	client  *management.Client
 	version string
 }
@@ -190,6 +191,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	p.client = c
 	p.stack = instance
+	p.models = newModelClient(cfg, stackAuth)
 }
 
 // GetResources - Defines provider resources

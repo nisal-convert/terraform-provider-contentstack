@@ -89,7 +89,10 @@ JSON
 ### Optional
 
 - `description` (String)
-- `schema` (String) The schema as JSON. Use jsonencode(jsonecode(<schema>)) to work around wrong changes.
+- `field_rules` (String) Field visibility rules as a JSON array. Use jsonencode to normalize JSON; [] removes all rules.
+- `maintain_revisions` (Boolean)
+- `options` (String) The complete content-type options as a JSON object, including singleton and page settings. Use jsonencode to normalize JSON.
+- `schema` (String) The schema as JSON. Use jsonencode(jsondecode(<schema>)) to normalize JSON.
 - `uid` (String)
 
 

@@ -2,14 +2,13 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
-	"github.com/labd/contentstack-go-sdk/management"
 )
 
 type resourceGlobalFieldType struct{}
@@ -20,6 +19,7 @@ type GlobalFieldData struct {
 	Description       types.String `tfsdk:"description"`
 	MaintainRevisions types.Bool   `tfsdk:"maintain_revisions"`
 	Schema            types.String `tfsdk:"schema"`
+	FieldRules        types.String `tfsdk:"field_rules"`
 }
 
 // Global Field Resource schema
@@ -43,7 +43,9 @@ func (r resourceGlobalFieldType) GetSchema(_ context.Context) (tfsdk.Schema, dia
 			"maintain_revisions": {
 				Type:     types.BoolType,
 				Optional: true,
+				Computed: true,
 			},
+			"field_rules": modelJSONAttribute("Field visibility rules as a JSON array. Use jsonencode to normalize JSON; [] removes all rules.", '['),
 			"description": {
 				Type:     types.StringType,
 				Optional: true,
@@ -51,7 +53,7 @@ func (r resourceGlobalFieldType) GetSchema(_ context.Context) (tfsdk.Schema, dia
 			"schema": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "The schema as JSON. Use jsonencode(jsonecode(<schema>)) to work around wrong changes.",
+				Description: "The schema as JSON. Use jsonencode(jsondecode(<schema>)) to normalize JSON.",
 			},
 		},
 	}, nil
@@ -77,7 +79,7 @@ func (r resourceGlobalField) Create(ctx context.Context, req tfsdk.CreateResourc
 	}
 
 	input := NewGlobalFieldInput(&plan)
-	resource, err := r.p.stack.GlobalFieldCreate(ctx, *input)
+	resource, err := r.p.models.request(ctx, http.MethodPost, "global_field", "", input)
 	if err != nil {
 		diags := processRemoteError(err)
 		resp.Diagnostics.Append(diags...)
@@ -102,7 +104,7 @@ func (r resourceGlobalField) Read(ctx context.Context, req tfsdk.ReadResourceReq
 		return
 	}
 
-	resource, err := r.p.stack.GlobalFieldFetch(ctx, state.UID.Value)
+	resource, err := r.p.models.request(ctx, http.MethodGet, "global_field", state.UID.Value, nil)
 	if err != nil {
 		if IsNotFoundError(err) {
 			d := diag.NewErrorDiagnostic(
@@ -122,7 +124,8 @@ func (r resourceGlobalField) Read(ctx context.Context, req tfsdk.ReadResourceReq
 
 	// Set state
 	newState := NewGlobalFieldData(resource)
-	diags = resp.State.Set(ctx, &newState)
+	MergeGlobalField(newState, &state)
+	diags = resp.State.Set(ctx, newState)
 	resp.Diagnostics.Append(diags...)
 }
 
@@ -135,7 +138,7 @@ func (r resourceGlobalField) Delete(ctx context.Context, req tfsdk.DeleteResourc
 	}
 
 	// Delete order by calling API
-	err := r.p.stack.GlobalFieldDelete(ctx, state.UID.Value)
+	_, err := r.p.models.request(ctx, http.MethodDelete, "global_field", state.UID.Value, nil)
 	if err != nil {
 		diags = processRemoteError(err)
 		resp.Diagnostics.Append(diags...)
@@ -164,7 +167,7 @@ func (r resourceGlobalField) Update(ctx context.Context, req tfsdk.UpdateResourc
 	}
 
 	input := NewGlobalFieldInput(&plan)
-	resource, err := r.p.stack.GlobalFieldUpdate(ctx, state.UID.Value, *input)
+	resource, err := r.p.models.request(ctx, http.MethodPut, "global_field", state.UID.Value, input)
 	if err != nil {
 		diags = processRemoteError(err)
 		resp.Diagnostics.Append(diags...)
@@ -185,36 +188,32 @@ func (r resourceGlobalField) ImportState(ctx context.Context, req tfsdk.ImportRe
 	tfsdk.ResourceImportStatePassthroughID(ctx, tftypes.NewAttributePath().WithAttributeName("uid"), req, resp)
 }
 
-func NewGlobalFieldData(field *management.GlobalField) *GlobalFieldData {
-
-	schemaContent, err := field.Schema.MarshalJSON()
-	if err != nil {
-		panic(err)
-	}
-
-	state := &GlobalFieldData{
+func NewGlobalFieldData(field *modelResponse) *GlobalFieldData {
+	return &GlobalFieldData{
 		UID:               types.String{Value: field.UID},
 		Title:             types.String{Value: field.Title},
 		Description:       types.String{Value: field.Description},
 		MaintainRevisions: types.Bool{Value: field.MaintainRevisions},
-		Schema:            types.String{Value: string(schemaContent)},
+		Schema:            modelJSONState(field.Schema, ""),
+		FieldRules:        modelJSONState(field.FieldRules, "[]"),
 	}
-	return state
 }
 
-func NewGlobalFieldInput(field *GlobalFieldData) *management.GlobalFieldInput {
-
-	input := &management.GlobalFieldInput{
-		UID:               &field.UID.Value,
+func NewGlobalFieldInput(field *GlobalFieldData) *modelInput {
+	return &modelInput{
+		UID:               modelStringInput(field.UID),
 		Title:             &field.Title.Value,
 		Description:       &field.Description.Value,
-		MaintainRevisions: field.MaintainRevisions.Value,
-		Schema:            json.RawMessage(field.Schema.Value),
+		MaintainRevisions: modelBoolInput(field.MaintainRevisions),
+		Schema:            modelJSONInput(field.Schema),
+		FieldRules:        modelJSONInput(field.FieldRules),
 	}
-
-	return input
 }
 
 func MergeGlobalField(out *GlobalFieldData, in *GlobalFieldData) {
-	out.Schema = in.Schema
+	out.Schema = preserveModelJSON(out.Schema, in.Schema)
+	out.FieldRules = preserveModelJSON(out.FieldRules, in.FieldRules)
+	if in.Description.IsNull() && out.Description.Value == "" {
+		out.Description = in.Description
+	}
 }

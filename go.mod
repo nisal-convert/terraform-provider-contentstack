@@ -1,4 +1,4 @@
-module github.com/labd/terraform-provider-contentstack
+module github.com/nisal-convert/terraform-provider-contentstack
 
 go 1.24.0
 

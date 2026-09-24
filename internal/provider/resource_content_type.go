@@ -2,23 +2,25 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
-	"github.com/labd/contentstack-go-sdk/management"
 )
 
 type resourceContentTypeType struct{}
 
 type ContentTypeData struct {
-	UID         types.String `tfsdk:"uid"`
-	Title       types.String `tfsdk:"title"`
-	Description types.String `tfsdk:"description"`
-	Schema      types.String `tfsdk:"schema"`
+	UID               types.String `tfsdk:"uid"`
+	Title             types.String `tfsdk:"title"`
+	Description       types.String `tfsdk:"description"`
+	Schema            types.String `tfsdk:"schema"`
+	Options           types.String `tfsdk:"options"`
+	FieldRules        types.String `tfsdk:"field_rules"`
+	MaintainRevisions types.Bool   `tfsdk:"maintain_revisions"`
 }
 
 // Global Field Resource schema
@@ -47,10 +49,17 @@ func (r resourceContentTypeType) GetSchema(_ context.Context) (tfsdk.Schema, dia
 				Type:     types.StringType,
 				Optional: true,
 			},
+			"options":     modelJSONAttribute("The complete content-type options as a JSON object, including singleton and page settings. Use jsonencode to normalize JSON.", '{'),
+			"field_rules": modelJSONAttribute("Field visibility rules as a JSON array. Use jsonencode to normalize JSON; [] removes all rules.", '['),
+			"maintain_revisions": {
+				Type:     types.BoolType,
+				Optional: true,
+				Computed: true,
+			},
 			"schema": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "The schema as JSON. Use jsonencode(jsonecode(<schema>)) to work around wrong changes.",
+				Description: "The schema as JSON. Use jsonencode(jsondecode(<schema>)) to normalize JSON.",
 			},
 		},
 	}, nil
@@ -76,7 +85,7 @@ func (r resourceContentType) Create(ctx context.Context, req tfsdk.CreateResourc
 	}
 
 	input := NewContentTypeInput(&plan)
-	resource, err := r.p.stack.ContentTypeCreate(ctx, *input)
+	resource, err := r.p.models.request(ctx, http.MethodPost, "content_type", "", input)
 	if err != nil {
 		diags := processRemoteError(err)
 		resp.Diagnostics.Append(diags...)
@@ -101,7 +110,7 @@ func (r resourceContentType) Read(ctx context.Context, req tfsdk.ReadResourceReq
 		return
 	}
 
-	resource, err := r.p.stack.ContentTypeFetch(ctx, state.UID.Value)
+	resource, err := r.p.models.request(ctx, http.MethodGet, "content_type", state.UID.Value, nil)
 	if err != nil {
 		if IsNotFoundError(err) {
 			d := diag.NewErrorDiagnostic(
@@ -121,7 +130,8 @@ func (r resourceContentType) Read(ctx context.Context, req tfsdk.ReadResourceReq
 
 	// Set state
 	newState := NewContentTypeData(resource)
-	diags = resp.State.Set(ctx, &newState)
+	MergeContentType(newState, &state)
+	diags = resp.State.Set(ctx, newState)
 	resp.Diagnostics.Append(diags...)
 }
 
@@ -134,7 +144,7 @@ func (r resourceContentType) Delete(ctx context.Context, req tfsdk.DeleteResourc
 	}
 
 	// Delete order by calling API
-	err := r.p.stack.ContentTypeDelete(ctx, state.UID.Value)
+	_, err := r.p.models.request(ctx, http.MethodDelete, "content_type", state.UID.Value, nil)
 	if err != nil {
 		diags = processRemoteError(err)
 		resp.Diagnostics.Append(diags...)
@@ -163,7 +173,7 @@ func (r resourceContentType) Update(ctx context.Context, req tfsdk.UpdateResourc
 	}
 
 	input := NewContentTypeInput(&plan)
-	resource, err := r.p.stack.ContentTypeUpdate(ctx, state.UID.Value, *input)
+	resource, err := r.p.models.request(ctx, http.MethodPut, "content_type", state.UID.Value, input)
 	if err != nil {
 		diags = processRemoteError(err)
 		resp.Diagnostics.Append(diags...)
@@ -184,34 +194,35 @@ func (r resourceContentType) ImportState(ctx context.Context, req tfsdk.ImportRe
 	tfsdk.ResourceImportStatePassthroughID(ctx, tftypes.NewAttributePath().WithAttributeName("uid"), req, resp)
 }
 
-func NewContentTypeData(field *management.ContentType) *ContentTypeData {
-
-	schemaContent, err := field.Schema.MarshalJSON()
-	if err != nil {
-		panic(err)
+func NewContentTypeData(field *modelResponse) *ContentTypeData {
+	return &ContentTypeData{
+		UID:               types.String{Value: field.UID},
+		Title:             types.String{Value: field.Title},
+		Description:       types.String{Value: field.Description},
+		Schema:            modelJSONState(field.Schema, ""),
+		Options:           modelJSONState(field.Options, "{}"),
+		FieldRules:        modelJSONState(field.FieldRules, "[]"),
+		MaintainRevisions: types.Bool{Value: field.MaintainRevisions},
 	}
-
-	state := &ContentTypeData{
-		UID:         types.String{Value: field.UID},
-		Title:       types.String{Value: field.Title},
-		Description: types.String{Value: field.Description},
-		Schema:      types.String{Value: string(schemaContent)},
-	}
-	return state
 }
 
-func NewContentTypeInput(field *ContentTypeData) *management.ContentTypeInput {
-
-	input := &management.ContentTypeInput{
-		UID:         &field.UID.Value,
-		Title:       &field.Title.Value,
-		Description: &field.Description.Value,
-		Schema:      json.RawMessage(field.Schema.Value),
+func NewContentTypeInput(field *ContentTypeData) *modelInput {
+	return &modelInput{
+		UID:               modelStringInput(field.UID),
+		Title:             &field.Title.Value,
+		Description:       &field.Description.Value,
+		Schema:            modelJSONInput(field.Schema),
+		Options:           modelJSONInput(field.Options),
+		FieldRules:        modelJSONInput(field.FieldRules),
+		MaintainRevisions: modelBoolInput(field.MaintainRevisions),
 	}
-
-	return input
 }
 
 func MergeContentType(out *ContentTypeData, in *ContentTypeData) {
-	out.Schema = in.Schema
+	out.Schema = preserveModelJSON(out.Schema, in.Schema)
+	out.Options = preserveModelJSON(out.Options, in.Options)
+	out.FieldRules = preserveModelJSON(out.FieldRules, in.FieldRules)
+	if in.Description.IsNull() && out.Description.Value == "" {
+		out.Description = in.Description
+	}
 }

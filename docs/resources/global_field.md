@@ -85,7 +85,8 @@ JSON
 ### Optional
 
 - `description` (String)
+- `field_rules` (String) Field visibility rules as a JSON array. Use jsonencode to normalize JSON; [] removes all rules.
 - `maintain_revisions` (Boolean)
-- `schema` (String) The schema as JSON. Use jsonencode(jsonecode(<schema>)) to work around wrong changes.
+- `schema` (String) The schema as JSON. Use jsonencode(jsondecode(<schema>)) to normalize JSON.
 
 
